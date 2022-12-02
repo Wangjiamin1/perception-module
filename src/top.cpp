@@ -165,7 +165,7 @@ Top::Top(){
     // m_enDispMode = EN_DISPLAY_MODE_IR;
     m_enCtrlMode = EN_CTRL_MODE_AUTOTRACK;//EN_CTRL_MODE_DET;//EN_CTRL_MODE_OB;
     m_enCtrlMode = EN_CTRL_MODE_OB;//EN_CTRL_MODE_DET;//EN_CTRL_MODE_OB;
-    m_enCtrlMode = EN_CTRL_MODE_DET;//EN_CTRL_MODE_DET;//EN_CTRL_MODE_OB;
+    // m_enCtrlMode = EN_CTRL_MODE_DET;//EN_CTRL_MODE_DET;//EN_CTRL_MODE_OB;
 }
 
 Top::~Top(){
@@ -178,6 +178,8 @@ Top::~Top(){
   delete[] buffRcvData_cam;
   delete[] buffSenData_razer;
   delete[] buffRcvData_razer;
+
+  printf("destructor!!!!!!\n");
 }
 
 // tcp 
@@ -379,6 +381,8 @@ void Top::find_asyn(std::vector<cv::Mat> &buffer_v, std::vector<cv::Mat> &buffer
 }
 
 int Top::run(){
+
+  signal(SIGINT, signal_handle);
   // struct sigaction sig_action;
   // sig_action.sa_handler = signal_handle;
   //   sigemptyset(&sig_action.sa_mask);
@@ -409,8 +413,8 @@ int Top::run(){
     // }
 
     // close(client_sock);
-    // std::thread tcpTh(&Top::tcp_rec, this);
-    // tcpTh.detach();
+    std::thread tcpTh(&Top::tcp_rec, this);
+    tcpTh.detach();
   // thread Serial_trans(&Top::serial_transfer, this);
   // std::thread send_serial(&Top::tcp_send, this);
   // std::thread rec_serial(&Top::tcp_rec, this);
@@ -429,18 +433,20 @@ int Top::run(){
 
   visCam = new v4l2(0);
   jetsonEncoder *RTSP = new jetsonEncoder(8554);
-  // thermalCam = new v4l2(1);
+  thermalCam = new v4l2(1);
 
   visCam->stream_init();
-  // thermalCam->stream_init();
+  thermalCam->stream_init();
 
   std::thread visCamTh(&v4l2::run, visCam);
+  pthread_t visCamThId = visCamTh.native_handle();
   visCamTh.detach();
-  // std::thread thermalCamTh(&v4l2::run, thermalCam);
-  // thermalCamTh.detach();
+  std::thread thermalCamTh(&v4l2::run, thermalCam);
+  pthread_t thermalCamThId = thermalCamTh.native_handle();
+  thermalCamTh.detach();
 
   nvrenderCfg rendercfg{1920, 1080, 960, 540, 0, 0, 0}; 
-  // nvrender *renderer = new nvrender(rendercfg);
+  nvrender *renderer = new nvrender(rendercfg);
 
   cv::Mat img, ret;
 
@@ -448,7 +454,7 @@ int Top::run(){
 
   bool trackerInit = false;
 
-  while(1)
+  while(!quit)
   {
     // printf("inn while\n");
     // if(mode_frame == 1 && mode_fun == 1){
@@ -469,7 +475,7 @@ int Top::run(){
     }
     else if(m_enDispMode == EN_DISPLAY_MODE_IR)
     {
-      // thermalCam->getFrame(img);
+      thermalCam->getFrame(img);
     }
     else
     {
@@ -493,48 +499,49 @@ int Top::run(){
 
     if(m_enCtrlMode == EN_CTRL_MODE_DET)
     {
-      ret = nvProcessor.ProcessOnce(img);
+      img = nvProcessor.ProcessOnce(img);
     }
-    // else if(m_enCtrlMode == EN_CTRL_MODE_AUTOTRACK)
-    // {
-    //   auto start = std::chrono::system_clock::now();
-    //   // if(trackerInit == false){
-    //   //   // siamtracking(tracker, img, trackerInit, init_rect, tb);
-    //   //   kcftracking(kcf, img, trackerInit, init_rect[0],init_rect[1]
-    //   // ,init_rect[2],init_rect[3]);
-    //   //   trackerInit = true;
-    //   // }
-    //   // else{
-    //   //   // siamtracking(tracker, img, trackerInit, init_rect, tb);
-    //   //   kcftracking(kcf, img, trackerInit, init_rect[0],init_rect[1]
-    //   // ,init_rect[2],init_rect[3]);
-    //   // }
+    else if(m_enCtrlMode == EN_CTRL_MODE_AUTOTRACK)
+    {
+      auto start = std::chrono::system_clock::now();
+      if(trackerInit == false){
+        // siamtracking(tracker, img, trackerInit, init_rect, tb);
+        kcftracking(kcf, img, trackerInit, init_rect[0],init_rect[1]
+      ,init_rect[2],init_rect[3]);
+        trackerInit = true;
+      }
+      else{
+        // siamtracking(tracker, img, trackerInit, init_rect, tb);
+        kcftracking(kcf, img, trackerInit, init_rect[0],init_rect[1]
+      ,init_rect[2],init_rect[3]);
+      }
 
-    //   printf("init rect:%f,%f,%f,%f\n",init_rect[0],init_rect[1]
-    //   ,init_rect[2],init_rect[3]);
+      printf("init rect:%f,%f,%f,%f\n",init_rect[0],init_rect[1]
+      ,init_rect[2],init_rect[3]);
 
-    //   auto end = std::chrono::system_clock::now();
-    // std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
-    //           << "ms" << std::endl;
+      auto end = std::chrono::system_clock::now();
+    std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
+              << "ms" << std::endl;
 
 
-    // }
+    }
 
     //draw cross, move to render
     // cv::line(img, cv::Point(600, 360), cv::Point(680, 360), cv::Scalar(0,255,255), 3);
     // cv::line(img, cv::Point(640, 320), cv::Point(640, 400), cv::Scalar(0,255,255), 3);
 
 
-    // RTSP->process(img);
-    // renderer->render(ret);
-    cv::imshow("1",ret);
-    cv::waitKey(30);
+    RTSP->process(img);
+    renderer->render(img);
+    // cv::imshow("1",ret);
+    // cv::waitKey(30);
 
-    // usleep(1000);
+    usleep(1000);
   }
 printf("after while\n");
 
-// pthread_cancel(visCamTh.native_handle());
+pthread_cancel(visCamThId);
+pthread_cancel(thermalCamThId);
 // delete visCam;
   // socklen_t len = 0;
   // std::cout << "------------------------------------------------" << std::endl;
