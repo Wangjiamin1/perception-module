@@ -151,7 +151,7 @@ Top::Top(){
     // serial
     is_focal = 0;
     focal_rec = 1;
-    is_detec_distane = 0;
+    serial_send_flag = 0;
     buffSenData_cam = new unsigned char [1024];
     buffRcvData_cam = new unsigned char [1024];
     buffSenData_razer = new unsigned char [1024];
@@ -196,14 +196,20 @@ void Top::tcp_rec()
         printf("tcp connected!\n");
         tcpAcc = true;
         encode_tcp_data(); 
-        int ret  =  send(client_sock, param, 11, 0);  
+        int ret  =  send(client_sock, param, 13, 0);  
       }
       else
       {
+        if(serial_send_flag){
+          printf("send tcp information");
+          encode_tcp_data();
+          int ret  =  send(client_sock, param, 13, 0);
+        }
         printf("wait cmd\n");
         int ren_len = recv(client_sock, rec_param, 18, 0);
-        printf("received %d bytes\n", ren_len);
+        
         if(ren_len > 0){
+          printf("tcp received %d bytes\n", ren_len);
           decode_tcp_data();
         }
       }
@@ -217,7 +223,7 @@ void Top::tcp_send()
     while(1)
     {     
       encode_tcp_data(); 
-      int ret  =  send(client_sock, param, 11, 0);  
+      int ret  =  send(client_sock, param, 13, 0);  
       std::this_thread::sleep_for(std::chrono::milliseconds(30));
     }
 }
@@ -228,9 +234,11 @@ void Top::encode_tcp_data(){
   param[5] = uchar(tb[0] & 0xFF);
   param[6] = uchar(tb[1] >> 8);
   param[7] = uchar(tb[1] & 0xFF);
-  param[8] = buffRcvData_razer[6];
-  param[9] = buffRcvData_razer[7];
-  param[10] = buffRcvData_razer[8];
+  param[8] = buffRcvData_razer[4];
+  param[9] = buffRcvData_razer[5];
+  param[10] = buffRcvData_razer[6];
+  param[11] = buffRcvData_razer[7];
+  param[12] = buffRcvData_razer[8];
 }
 
 void Top::decode_tcp_data(){
@@ -282,7 +290,7 @@ void Top::decode_tcp_data(){
   //   mode_fun = 1;
 
   // lazer
-  is_detec_distane = int(rec_param[7]);
+  serial_send_flag = int(rec_param[7]);
 
   // no_use
   int no_use = int(rec_param[8]);
@@ -415,10 +423,10 @@ int Top::run(){
     // close(client_sock);
     std::thread tcpTh(&Top::tcp_rec, this);
     tcpTh.detach();
-  // thread Serial_trans(&Top::serial_transfer, this);
+  thread Serial_trans(&Top::serial_transfer, this);
   // std::thread send_serial(&Top::tcp_send, this);
   // std::thread rec_serial(&Top::tcp_rec, this);
-  // Serial_trans.detach();
+  Serial_trans.detach();
   // send_serial.detach();
   // rec_serial.detach(); 
 
@@ -971,7 +979,7 @@ int Top::serial_transfer(){
   // set focal serial command
   buffSenData_cam[0] = 0x81;  
   buffSenData_cam[1] = 0x01;  
-  buffSenData_cam[2] = 0x04;  
+  buffSenData_cam[2] = 0x04;
   buffSenData_cam[3] = 0x47;  
   buffSenData_cam[8] = 0xFF;
 
@@ -980,12 +988,11 @@ int Top::serial_transfer(){
   buffSenData_razer[1] = 0x16;
   buffSenData_razer[2] = 0x02;
   buffSenData_razer[3] = 0x03;
-  buffSenData_razer[4] = 0x02;
-  buffSenData_razer[5] = 0x05;
+  
 
   Serial serial_viscam, serial_razer;
   serial_viscam.set_serial(1);
-  // serial_razer.set_serial(2);
+  serial_razer.set_serial(2);
   while(1){
     // if(is_focal == 1){
       // std::cout << focal << " " << focal_rec << std::endl;
@@ -1020,16 +1027,34 @@ int Top::serial_transfer(){
         buffSenData_cam[6] = 0x00;  
         buffSenData_cam[7] = 0x00;
       }
-      serial_viscam.serial_send(buffSenData_cam, 9);
-      serial_viscam.serial_recieve(buffRcvData_cam);
-    //   is_focal= 0;
-    // }
-    // if(is_detec_distane == 1){
-    //   serial_razer.serial_send(buffSenData_razer, 5);
-    //   serial_razer.serial_recieve(buffRcvData_razer);
-    // }
-    // std::cout <<  int(buffRcvData[0]) << " " <<  int(buffRcvData[1]) << " "  <<  int(buffRcvData[2]) << " " <<  int(buffRcvData[3]) << " " 
-    //           <<  int(buffRcvData[4]) << " " <<  int(buffRcvData[5]) << " " <<  int(buffRcvData[6]) << std::endl;
+      //设备自检
+      else if(focal_rec == 6){
+        buffSenData_razer[4] = 0x01;
+        buffSenData_razer[5] = 0x04;
+      }
+      //单次测距
+      else if(focal_rec == 7){
+        buffSenData_razer[4] = 0x02;
+        buffSenData_razer[5] = 0x05;
+      }
+      //查询硬件版本号
+      else if(focal_rec == 8){
+         buffSenData_razer[4] = 0xA8;
+         buffSenData_razer[5] = 0xAB;
+
+      }
+      // serial_viscam.serial_send(buffSenData_cam, 9);
+      // serial_viscam.serial_recieve(buffRcvData_cam);
+      //   is_focal= 0;
+      // }
+      if(serial_send_flag==1){
+        serial_razer.serial_send(buffSenData_razer, 6);
+        serial_razer.serial_recieve(buffRcvData_cam);
+        serial_send_flag = 0;
+      }
+      
+      // std::cout <<  int(buffRcvData[0]) << " " <<  int(buffRcvData[1]) << " "  <<  int(buffRcvData[2]) << " " <<  int(buffRcvData[3]) << " " 
+      //           <<  int(buffRcvData[4]) << " " <<  int(buffRcvData[5]) << " " <<  int(buffRcvData[6]) << std::endl;
   }
 }
 

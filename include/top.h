@@ -132,6 +132,7 @@ private:
   int is_focal;
   int focal_rec;
   int is_detec_distane;
+  int serial_send_flag;
   unsigned char* buffSenData_cam;
   unsigned char* buffRcvData_cam;
   unsigned char* buffSenData_razer;
