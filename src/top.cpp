@@ -1028,17 +1028,17 @@ int Top::serial_transfer(){
         buffSenData_cam[7] = 0x00;
       }
       //设备自检
-      else if(focal_rec == 6){
+      if(serial_send_flag == 1){
         buffSenData_razer[4] = 0x01;
         buffSenData_razer[5] = 0x04;
       }
       //单次测距
-      else if(focal_rec == 7){
+      else if(serial_send_flag == 2){
         buffSenData_razer[4] = 0x02;
         buffSenData_razer[5] = 0x05;
       }
       //查询硬件版本号
-      else if(focal_rec == 8){
+      else if(serial_send_flag == 3){
          buffSenData_razer[4] = 0xA8;
          buffSenData_razer[5] = 0xAB;
 
@@ -1047,7 +1047,7 @@ int Top::serial_transfer(){
       // serial_viscam.serial_recieve(buffRcvData_cam);
       //   is_focal= 0;
       // }
-      if(serial_send_flag==1){
+      if(serial_send_flag!=0){
         serial_razer.serial_send(buffSenData_razer, 6);
         serial_razer.serial_recieve(buffRcvData_cam);
         serial_send_flag = 0;
